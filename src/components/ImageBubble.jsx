@@ -41,8 +41,8 @@ export default function ImageBubble({ path, preview }) {
         loading="lazy"
         className="
     w-full
-    max-w-[280px]
-    md:max-w-[320px]
+    max-w-[200px]
+    md:max-w-[280px]
     rounded-2xl
     cursor-zoom-in
     object-cover

@@ -1,16 +1,58 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useUserId } from "../hooks/useUserId";
+import TopAlert from "../components/TopAlert";
+
+function enterFullscreen() {
+  const el = document.documentElement;
+
+  if (el.requestFullscreen) {
+    el.requestFullscreen();
+  } else if (el.webkitRequestFullscreen) {
+    el.webkitRequestFullscreen(); // iOS Safari
+  }
+}
+
 
 export default function Home() {
   const nav = useNavigate();
   const userId = useUserId();
   const [joinCode, setJoinCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const [alert, setAlert] = useState(null);
+
+  useEffect(() => {
+    async function resumeRoom() {
+      const lastCode = localStorage.getItem("last_room_code");
+      const lastUser = localStorage.getItem("last_room_user");
+
+      if (!lastCode || !lastUser) return;
+
+      const { data } = await supabase
+        .from("rooms")
+        .select("expired_at")
+        .eq("code", lastCode)
+        .single();
+
+      // ❌ ROOM SUDAH TIDAK ADA / EXPIRED
+      if (!data || new Date(data.expired_at) < new Date()) {
+        localStorage.removeItem("last_room_code");
+        localStorage.removeItem("last_room_user");
+        return;
+      }
+
+      // ✅ ROOM MASIH VALID
+      nav(`/room/${lastCode}`);
+    }
+
+    resumeRoom();
+  }, [nav]);
+
 
   async function newChat() {
     if (loading) return;
+    enterFullscreen();
     setLoading(true);
 
     const code = Math.random()
@@ -24,10 +66,11 @@ export default function Home() {
     });
 
     if (roomError) {
-      alert("Gagal membuat room");
+      setAlert({ type: "error", message: "Gagal membuat room" });
       setLoading(false);
       return;
     }
+
 
     const { error: joinError } = await supabase.rpc("join_room", {
       p_code: code,
@@ -35,85 +78,145 @@ export default function Home() {
     });
 
     if (joinError) {
-      alert("Gagal join room");
+      setAlert({ type: "error", message: "Gagal join room" });
       setLoading(false);
       return;
     }
 
+    localStorage.setItem("last_room_code", code);
+    localStorage.setItem("last_room_user", userId);
+
     nav(`/room/${code}`);
   }
 
-  function joinChat(e) {
+  async function joinChat(e) {
     e.preventDefault();
+    enterFullscreen();
     if (!joinCode.trim()) return;
-    nav(`/room/${joinCode.trim().toUpperCase()}`);
+
+    const code = joinCode.trim().toUpperCase();
+
+    const { data } = await supabase
+      .from("rooms")
+      .select("expired_at")
+      .eq("code", code)
+      .single();
+
+    if (!data) {
+      setAlert({ type: "error", message: "Room tidak ditemukan" });
+      return;
+    }
+
+    if (new Date(data.expired_at) < new Date()) {
+      setAlert({ type: "error", message: "Room sudah expired" });
+      return;
+    }
+
+    localStorage.setItem("last_room_code", code);
+    localStorage.setItem("last_room_user", userId);
+
+    nav(`/room/${code}`);
   }
 
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F8F8D8]">
-      <div className="text-center space-y-6">
+    <>
+      <TopAlert alert={alert} onClose={() => setAlert(null)} />
+      <div
+        className="
+          flex
+          min-h-screen
+          bg-[#F8F8D8]
+          items-center justify-center
+        "
+      >
+        <div
+          className="
+            space-y-6
+            text-center
+          "
+        >
 
-        {/* TITLE */}
-        <h1 className="text-4xl font-semibold text-[#EF9CAE]">
-          One Time Chat
-        </h1>
-
-        {/* JOIN BAR */}
-        <div className="flex items-center justify-center gap-2">
-          {/* PLUS */}
-          <button
-            onClick={newChat}
-            disabled={loading}
+          {/* TITLE */}
+          <h1
             className="
-              w-11 h-11
-              flex items-center justify-center
-              rounded-lg
-              bg-[#EF9CAE]
-              text-white
-              text-xl
-              hover:opacity-90
-              disabled:opacity-50
+              text-4xl font-semibold text-[#EF9CAE]
             "
           >
-            +
-          </button>
+            One Time Chat
+          </h1>
 
-          {/* INPUT */}
-          <form onSubmit={joinChat} className="flex">
-            <input
-              value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value)}
-              placeholder=""
-              className="
-                w-40 h-11
-                px-4
-                rounded-l-lg
-                border
-                border-[#EF9CAE]
-                focus:outline-none
-                uppercase
-                text-center
-              "
-            />
-
-            {/* JOIN BUTTON */}
+          {/* JOIN BAR */}
+          <div
+            className="
+              flex
+              items-center justify-center gap-2
+            "
+          >
+            {/* PLUS */}
             <button
-              type="submit"
+              onClick={newChat}
+              disabled={loading}
               className="
-                h-11 px-4
-                rounded-r-lg
+                flex
+                w-11 h-11
+                text-white text-xl
                 bg-[#EF9CAE]
-                text-white
-                font-medium
-                hover:opacity-90
+                rounded-lg
+                items-center justify-center hover:opacity-90 disabled:opacity-50
               "
             >
-              JOIN
+              +
             </button>
-          </form>
-        </div>
 
+            {/* INPUT */}
+            <form
+              onSubmit={joinChat}
+              className="
+                flex
+              "
+            >
+              <input
+                value={joinCode}
+                onChange={(e) => {
+                  const value = e.target.value
+                    .toUpperCase()
+                    .replace(/[^A-Z0-9]/g, "") // opsional: cuma huruf & angka
+                    .slice(0, 6);              // 🔒 MAX 6 KARAKTER
+
+                  setJoinCode(value);
+                }}
+                maxLength={6}
+                placeholder="CODE"
+                className="
+                  w-40 h-11
+                  px-4
+                  text-sm text-[#374151] text-center
+                  rounded-l-lg border border-[#EF9CAE]
+                  focus:outline-none uppercase
+                "
+              />
+
+
+              {/* JOIN BUTTON */}
+              <button
+                type="submit"
+                className="
+                  h-11
+                  px-4
+                  text-white font-medium
+                  bg-[#EF9CAE]
+                  rounded-r-lg
+                  hover:opacity-90
+                "
+              >
+                JOIN
+              </button>
+            </form>
+          </div>
+
+        </div>
       </div>
-    </div>
+    </>
   );
 }

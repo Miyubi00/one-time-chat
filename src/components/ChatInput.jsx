@@ -24,6 +24,8 @@ export default function ChatInput({
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
   const fileInputRef = useRef(null);
+  const textareaRef = useRef(null);
+  const streamRef = useRef(null);
 
   const hasText = text.trim().length > 0;
   const hasImage = !!imageFile;
@@ -33,17 +35,24 @@ export default function ChatInput({
   ====================== */
   function handleSend() {
     if (hasImage) {
-      onSendImage(imageFile, text); // image + optional text
+      onSendImage(imageFile, text);
       clearImage();
       setText("");
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+      }
       return;
     }
 
     if (hasText) {
       onSendText(text);
       setText("");
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+      }
     }
   }
+
 
   function handlePaste(e) {
     const items = e.clipboardData?.items;
@@ -89,21 +98,36 @@ export default function ChatInput({
       audio: true,
     });
 
+    streamRef.current = stream; // ✅ SIMPAN STREAM
+
     const mediaRecorder = new MediaRecorder(stream);
     mediaRecorderRef.current = mediaRecorder;
     chunksRef.current = [];
 
     mediaRecorder.ondataavailable = (e) => {
-      chunksRef.current.push(e.data);
+      if (e.data && e.data.size > 0) {
+        chunksRef.current.push(e.data);
+      }
     };
+
 
     mediaRecorder.onstop = () => {
       const blob = new Blob(chunksRef.current, {
         type: "audio/webm",
       });
-      onSendVoice(blob);
+
+      if (blob.size > 0) {
+        onSendVoice(blob);
+      } else {
+        console.warn("🎙 Voice kosong, tidak dikirim");
+      }
+
       chunksRef.current = [];
+
+      stream.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     };
+
 
     mediaRecorder.start();
     setRecording(true);
@@ -121,34 +145,71 @@ export default function ChatInput({
   }
 
   useEffect(() => {
-    return () => clearInterval(timerRef.current);
+    return () => {
+      clearInterval(timerRef.current);
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+    };
   }, []);
+
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.hidden && recording) {
+        stopRecording();
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibility);
+  }, [recording]);
 
   /* ======================
      UI
   ====================== */
   return (
-    <div className="px-4 pb-4">
+    <div
+      className="
+        px-4 pb-4
+      "
+    >
       {/* IMAGE PREVIEW */}
       {imagePreview && (
-        <div className="mb-2">
-          <div className="relative w-40 rounded-xl overflow-hidden group">
+        <div
+          className="
+            mb-2
+          "
+        >
+          <div
+            className="
+              overflow-hidden
+              w-40
+              rounded-xl
+              relative group
+            "
+          >
             <img
               src={imagePreview}
               alt="preview"
-              className="w-full h-full object-cover"
+              className="
+                object-cover
+                w-full h-full
+              "
             />
 
             {/* CANCEL IMAGE */}
             <button
               onClick={clearImage}
               className="
-                absolute top-2 right-2
+                hidden
                 w-6 h-6
-                bg-black/60 text-white
+                text-white
+                bg-black/60
                 rounded-full
-                hidden group-hover:flex
-                items-center justify-center
+                absolute top-2 right-2 group-hover:flex items-center justify-center
               "
             >
               <FaTimes size={12} />
@@ -160,11 +221,11 @@ export default function ChatInput({
       {/* INPUT BAR */}
       <div
         className="
-          flex items-center gap-3
-          bg-white
-          border-2 border-[#A7C97A]
-          rounded-xl
+          flex
           px-3 py-2
+          bg-white
+          border-2 border-[#EF9CAE] rounded-xl
+          items-end gap-3
         "
       >
         {/* PLUS */}
@@ -172,7 +233,9 @@ export default function ChatInput({
           <>
             <button
               onClick={() => fileInputRef.current.click()}
-              className="text-[#A7C97A] text-lg"
+              className="
+                text-[#EF9CAE] mb-2.5 text-lg
+              "
             >
               <FaPlus />
             </button>
@@ -188,28 +251,56 @@ export default function ChatInput({
         )}
 
         {/* INPUT / TIMER */}
-        <div className="flex-1">
+        <div
+          className="
+            flex-1
+          "
+        >
           {recording ? (
-            <div className="text-sm text-gray-600 font-mono">
-              🎙 {String(Math.floor(seconds / 60)).padStart(2, "0")}:
+            <div
+              className="
+                flex
+                text-sm mb-2.5 text-gray-600 font-mono
+                items-center gap-2
+              "
+            >
+              <FaMicrophone
+                className="
+                  text-[#EF9CAE]
+                "
+              />
+              {String(Math.floor(seconds / 60)).padStart(2, "0")}:
               {String(seconds % 60).padStart(2, "0")}
             </div>
           ) : (
-            <input
+            <textarea
+              ref={textareaRef}
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              rows={1}
+              onChange={(e) => {
+                setText(e.target.value);
+                e.target.style.height = "auto";
+                e.target.style.height = e.target.scrollHeight + "px";
+              }}
               onPaste={handlePaste}
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
               placeholder="Tulis pesan"
               className="
-                w-full
+                overflow-y-auto
+                w-full max-h-32
+                text-sm text-gray-700 placeholder-gray-400 leading-relaxed break-words
                 bg-transparent
+                resize-none
                 outline-none
-                text-sm
-                text-gray-700
-                placeholder-gray-400
               "
             />
+
+
           )}
         </div>
 
@@ -218,14 +309,19 @@ export default function ChatInput({
           <button
             onClick={handleSend}
             className="
+              flex
               w-9 h-9
-              bg-[#A7C97A]
-              rounded-lg
-              flex items-center justify-center
               text-white
+              bg-[#EF9CAE]
+              rounded-lg
+              items-center justify-center
             "
           >
-            <FaPaperPlane className="text-sm" />
+            <FaPaperPlane
+              className="
+                text-sm
+              "
+            />
           </button>
         )}
 
@@ -233,11 +329,12 @@ export default function ChatInput({
           <button
             onClick={startRecording}
             className="
+              flex
               w-9 h-9
-              bg-[#A7C97A]
-              rounded-lg
-              flex items-center justify-center
               text-white
+              bg-[#EF9CAE]
+              rounded-lg
+              items-center justify-center
             "
           >
             <FaMicrophone />
@@ -248,11 +345,12 @@ export default function ChatInput({
           <button
             onClick={stopRecording}
             className="
+              flex
               w-10 h-10
+              text-white
               bg-red-500
               rounded-full
-              flex items-center justify-center
-              text-white
+              items-center justify-center
             "
           >
             <FaStop />

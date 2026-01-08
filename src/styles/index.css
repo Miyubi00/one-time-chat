@@ -9,3 +9,51 @@ body {
   margin: 0;
   font-family: "Poppins", sans-serif;
 }
+
+/* ================================
+   SCROLLBAR STYLE (GLOBAL)
+================================ */
+
+/* Chrome, Edge, Safari */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(167, 201, 122, 0.6);
+  /* hijau lembut */
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(167, 201, 122, 0.9);
+}
+
+/* ================================
+   FIREFOX
+================================ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(167, 201, 122, 0.7) transparent;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slideDown {
+  animation: slideDown 0.25s ease-out;
+}
+

@@ -36,7 +36,13 @@ export default function VoiceBubble({
 
   return (
     <div
-      className="flex items-center gap-3 px-4 py-2 rounded-xl w-64"
+      className="
+  flex items-center gap-3
+  px-4 py-2 rounded-xl
+  w-full max-w-[260px]
+  sm:max-w-[320px]
+"
+
       style={{ backgroundColor: color }}
     >
       {/* PLAY / PAUSE */}

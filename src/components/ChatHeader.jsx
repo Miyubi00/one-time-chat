@@ -54,7 +54,7 @@ export default function ChatHeader({
             "
           >
             {/* EXIT ICON */}
-            <IoExitOutline className="text-lg" />
+            <IoExitOutline className="text-xl" />
           </button>
         </div>
       </div>

@@ -17,6 +17,7 @@ export default function Room() {
   const userId = useUserId();
   const scrollRef = useRef(null);
 
+
   const [roomId, setRoomId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [reply, setReply] = useState(null);
@@ -46,17 +47,10 @@ export default function Room() {
       e.returnValue = "";
     };
 
-    const preventBack = () => {
-      history.pushState(null, "", location.href);
-    };
-
     window.addEventListener("beforeunload", preventUnload);
-    window.addEventListener("popstate", preventBack);
-    history.pushState(null, "", location.href);
 
     return () => {
       window.removeEventListener("beforeunload", preventUnload);
-      window.removeEventListener("popstate", preventBack);
     };
   }, []);
 
@@ -64,33 +58,57 @@ export default function Room() {
      JOIN ROOM
   ====================== */
   useEffect(() => {
+    if (!userId || !code) return;
+
+    let cancelled = false;
+
     async function join() {
-      const { data, error } = await supabase.rpc("join_room", {
-        p_code: code,
-        p_user_id: userId
-      });
+      setLoading(true);
+      setError(null);
 
-      if (error) {
-        setError(
-          error.message.includes("ROOM_FULL")
-            ? "Room penuh (maksimal 5 orang)"
-            : "Room tidak ditemukan atau sudah expired"
-        );
+      try {
+        const { data, error } = await supabase.rpc("join_room", {
+          p_code: code,
+          p_user_id: userId,
+        });
+
+        if (cancelled) return;
+
+        if (error || !data) {
+          setError("Room tidak ditemukan atau sudah expired");
+          setLoading(false);
+          return;
+        }
+
+        setRoomId(data);
         setLoading(false);
-        return;
-      }
+      } catch (err) {
+        if (cancelled) return;
 
-      setRoomId(data);
-      setLoading(false);
+        console.error("JOIN ROOM ERROR:", err);
+        setError("Room tidak ditemukan atau sudah expired");
+        setLoading(false);
+      }
     }
 
     join();
+
+    return () => {
+      cancelled = true;
+    };
   }, [code, userId]);
 
   /* ======================
      EXPIRY
   ====================== */
   const { expired, remaining } = useRoomExpiry(roomId);
+
+  useEffect(() => {
+    if (expired) {
+      localStorage.removeItem("last_room_code");
+      localStorage.removeItem("last_room_user");
+    }
+  }, [expired]);
 
   /* ======================
      PRESENCE (ACTUAL USER)
@@ -172,6 +190,37 @@ export default function Room() {
   });
 
   /* ======================
+   REFRESH SAAT TAB AKTIF
+====================== */
+  useEffect(() => {
+    if (!roomId) return;
+
+    async function refetchLatest() {
+      const { data } = await supabase
+        .from("messages_with_reply")
+        .select("*")
+        .eq("room_id", roomId)
+        .order("created_at");
+
+      if (data) {
+        setMessages(data);
+      }
+    }
+
+    function handleVisibility() {
+      if (document.visibilityState === "visible") {
+        refetchLatest(); // 🔥 INI KUNCI
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [roomId]);
+
+  /* ======================
      SEND TEXT
   ====================== */
   async function sendText(text) {
@@ -234,9 +283,6 @@ export default function Room() {
       content: path
     });
   }
-  /* ======================
-     SEND IMAGE (FINAL)
-  ====================== */
   /* ======================
    SEND IMAGE (FINAL – SAFE)
 ====================== */
@@ -333,6 +379,8 @@ export default function Room() {
     await supabase.removeAllChannels();
 
     localStorage.setItem(`room_exit_${code}`, "true");
+    localStorage.removeItem("last_room_code");
+    localStorage.removeItem("last_room_user");
 
     navigate("/", { replace: true });
   }
@@ -341,119 +389,211 @@ export default function Room() {
      UI STATES
   ====================== */
   if (loading) {
-    return <div className="p-6">Joining room...</div>;
-  }
-
-  if (error) {
     return (
-      <div className="p-6 text-center">
-        <p className="mb-4">{error}</p>
-        <button
-          onClick={() => navigate("/")}
-          className="px-4 py-2 bg-[#EF9CAE] text-white rounded-lg"
-        >
-          Back
-        </button>
+      <div
+        className="
+        flex
+        min-h-screen
+        bg-[#F8F8D8]
+        items-center
+        justify-center
+      "
+      >
+        <div className="text-center space-y-3">
+          <div
+            className="
+            w-8 h-8
+            border-4
+            border-[#EF9CAE]
+            border-t-transparent
+            rounded-full
+            animate-spin
+            mx-auto
+          "
+          />
+
+          <p
+            className="
+            text-sm
+            font-medium
+            text-[#374151]
+          "
+          >
+            Joining room...
+          </p>
+        </div>
       </div>
     );
   }
 
   if (expired) {
     return (
-      <div className="p-6 text-center">
-        <h2 className="text-xl mb-2">🗑️ Chat Expired</h2>
-        <p className="mb-4">Room ini sudah dihapus otomatis.</p>
-        <button
-          onClick={() => navigate("/")}
-          className="px-4 py-2 bg-[#EF9CAE] text-white rounded-lg"
+      <div
+        className="
+        flex
+        min-h-screen
+        bg-[#F8F8D8]
+        items-center
+        justify-center
+      "
+      >
+        <div
+          className="
+          text-center
+          space-y-4
+        "
         >
-          Kembali ke Home
-        </button>
+          <h2
+            className="
+            text-4xl
+            font-semibold
+            text-[#EF9CAE]
+          "
+          >
+            Chat Expired
+          </h2>
+
+          <p
+            className="
+            text-sm
+            text-[#374151]
+          "
+          >
+            Room ini sudah dihapus otomatis.
+          </p>
+
+          <button
+            onClick={() => navigate("/")}
+            className="
+            mt-2
+            px-6
+            py-2
+            text-sm
+            font-medium
+            text-white
+            bg-[#EF9CAE]
+            rounded-lg
+            hover:opacity-90
+          "
+          >
+            Kembali ke Home
+          </button>
+        </div>
       </div>
     );
   }
+
 
   /* ======================
      MAIN UI
   ====================== */
   return (
-    <div className="h-screen bg-[#F8F8D8] flex flex-col overflow-hidden">
-      {/* HEADER — FIXED DI ATAS */}
-      <div className="flex-shrink-0">
-        <ChatHeader
-          userCount={userCount}
-          maxUser={5}
-          remaining={remaining}
-          roomCode={code}
-          onExit={handleExit}
-        />
-      </div>
-
-      {/* CHAT LIST — SATU-SATUNYA YANG SCROLL */}
+    <div
+      className="
+    flex
+    h-screen
+    bg-[#F8F8D8]
+    justify-center
+  "
+    >
       <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto px-4 py-2"
-      >
-        <ChatList
-          messages={messages}
-          userId={userId}
-          userColors={userColors}
-          onReply={setReply}
-          highlightId={highlightId}
-          onJump={scrollToMessage}
-          onReachBottom={(atBottom) => {
-            setIsAtBottom(atBottom);
-
-            if (atBottom) {
-              setShowNewMessage(false);
-            }
-          }}
-
-        />
-      </div>
-
-      {/* REPLY PREVIEW — NEMPEL DI BAWAH */}
-      <div className="flex-shrink-0">
-        <ReplyPreview
-          reply={reply}
-          onCancel={() => setReply(null)}
-          onJump={(id) => scrollToMessage(id)}
-        />
-      </div>
-
-      {/* INPUT — FIXED DI BAWAH */}
-      <div className="flex-shrink-0">
-        {showNewMessage && (
-          <div
-            onClick={() => {
-              setShowNewMessage(false);
-              const el = scrollRef.current;
-              el?.scrollTo({
-                top: el.scrollHeight,
-                behavior: "smooth"
-              });
-            }}
-            className="
-      mx-4 mb-2
-      bg-[#A7C97A]
-      text-[#3F5D2A]
-      text-sm
-      px-4 py-2
-      rounded-full
-      shadow
-      cursor-pointer
-      text-center
-      animate-bounce
+        className="
+      flex flex-col
+      w-full max-w-2xl h-full rounded-lg
+      bg-[#F3F3D0]
+      shadow-[0_0_40px_rgba(0,0,0,0.12)]
     "
-          >
-            ⬇ New message
-          </div>
-        )}
-        <ChatInput
-          onSendText={sendText}
-          onSendVoice={sendVoice}
-          onSendImage={sendImage}
-        />
+      >
+
+
+        {/* HEADER — FIXED DI ATAS */}
+        <div
+          className="
+            flex-shrink-0
+          "
+        >
+          <ChatHeader
+            userCount={userCount}
+            maxUser={5}
+            remaining={remaining}
+            roomCode={code}
+            onExit={handleExit}
+          />
+        </div>
+
+        {/* CHAT LIST — SATU-SATUNYA YANG SCROLL */}
+        <div
+          ref={scrollRef}
+          className="
+            flex-1 overflow-y-auto
+            px-4 py-2
+          "
+        >
+          <ChatList
+            messages={messages}
+            userId={userId}
+            userColors={userColors}
+            onReply={setReply}
+            highlightId={highlightId}
+            onJump={scrollToMessage}
+            onReachBottom={(atBottom) => {
+              setIsAtBottom(atBottom);
+
+              if (atBottom) {
+                setShowNewMessage(false);
+              }
+            }}
+
+          />
+        </div>
+
+        {/* REPLY PREVIEW — NEMPEL DI BAWAH */}
+        <div
+          className="
+            flex-shrink-0
+          "
+        >
+          <ReplyPreview
+            reply={reply}
+            onCancel={() => setReply(null)}
+            onJump={(id) => scrollToMessage(id)}
+          />
+        </div>
+
+        {/* INPUT — FIXED DI BAWAH */}
+        <div
+          className="
+            flex-shrink-0
+          "
+        >
+          {showNewMessage && (
+            <div
+              onClick={() => {
+                setShowNewMessage(false);
+                const el = scrollRef.current;
+                el?.scrollTo({
+                  top: el.scrollHeight,
+                  behavior: "smooth"
+                });
+              }}
+              className="
+                mx-4 mb-2 px-4 py-2
+                text-[#3F5D2A] text-sm text-center
+                bg-[#A7C97A]
+                rounded-full
+                cursor-pointer animate-bounce
+                shadow
+              "
+            >
+              ⬇ New message
+            </div>
+          )}
+          <ChatInput
+            onSendText={sendText}
+            onSendVoice={sendVoice}
+            onSendImage={sendImage}
+          />
+        </div>
       </div>
     </div>
   );
