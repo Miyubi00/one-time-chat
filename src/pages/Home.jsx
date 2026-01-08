@@ -4,16 +4,6 @@ import { supabase } from "../lib/supabase";
 import { useUserId } from "../hooks/useUserId";
 import TopAlert from "../components/TopAlert";
 
-function enterFullscreen() {
-  const el = document.documentElement;
-
-  if (el.requestFullscreen) {
-    el.requestFullscreen();
-  } else if (el.webkitRequestFullscreen) {
-    el.webkitRequestFullscreen(); // iOS Safari
-  }
-}
-
 
 export default function Home() {
   const nav = useNavigate();
@@ -52,7 +42,6 @@ export default function Home() {
 
   async function newChat() {
     if (loading) return;
-    enterFullscreen();
     setLoading(true);
 
     const code = Math.random()
@@ -91,7 +80,6 @@ export default function Home() {
 
   async function joinChat(e) {
     e.preventDefault();
-    enterFullscreen();
     if (!joinCode.trim()) return;
 
     const code = joinCode.trim().toUpperCase();
@@ -177,17 +165,21 @@ export default function Home() {
               "
             >
               <input
+                id="joinCode"
+                name="join_code"
                 value={joinCode}
                 onChange={(e) => {
                   const value = e.target.value
                     .toUpperCase()
-                    .replace(/[^A-Z0-9]/g, "") // opsional: cuma huruf & angka
-                    .slice(0, 6);              // 🔒 MAX 6 KARAKTER
+                    .replace(/[^A-Z0-9]/g, "")
+                    .slice(0, 6);
 
                   setJoinCode(value);
                 }}
                 maxLength={6}
                 placeholder="CODE"
+                autoComplete="off"
+                inputMode="text"
                 className="
                   w-40 h-11
                   px-4
@@ -196,7 +188,6 @@ export default function Home() {
                   focus:outline-none uppercase
                 "
               />
-
 
               {/* JOIN BUTTON */}
               <button
